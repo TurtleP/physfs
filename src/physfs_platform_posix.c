@@ -24,7 +24,8 @@
 #include "physfs_internal.h"
 
 #ifdef PHYSFS_PLATFORM_3DS
-return __PHYSFS_3DSCalcUserDir();
+#include <3ds/synchronization.h>
+#include <3ds/thread.h>
 #endif
 
 static PHYSFS_ErrorCode errcodeFromErrnoError(const int err)
@@ -61,6 +62,9 @@ static inline PHYSFS_ErrorCode errcodeFromErrno(void)
 
 static char *getUserDirByUID(void)
 {
+#ifdef PHYSFS_PLATFORM_3DS
+    return __PHYSFS_3DSCalcUserDir();
+#endif
     uid_t uid = getuid();
     struct passwd *pw;
     char *retval = NULL;
