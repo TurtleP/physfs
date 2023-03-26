@@ -108,6 +108,10 @@ const void *__PHYSFS_winrtCalcBaseDir(void);
 const void *__PHYSFS_winrtCalcPrefDir(void);
 #endif
 
+#ifdef PHYSFS_PLATFORM_3DS
+char* __PHYSFS_3DSCalcUserDir(void);
+#endif
+
 /* atomic operations. */
 /* increment/decrement operations return the final incremented/decremented value. */
 #if defined(_MSC_VER) && (_MSC_VER >= 1500)
