@@ -23,6 +23,11 @@
 
 #include "physfs_internal.h"
 
+#ifdef PHYSFS_PLATFORM_WIIU
+#include <coreinit/thread.h>
+#include <coreinit/mutex.h>
+#include <coreinit/debug.h>
+#endif
 
 static PHYSFS_ErrorCode errcodeFromErrnoError(const int err)
 {
@@ -58,61 +63,69 @@ static inline PHYSFS_ErrorCode errcodeFromErrno(void)
 
 static char *getUserDirByUID(void)
 {
-    uid_t uid = getuid();
-    struct passwd *pw;
-    char *retval = NULL;
+    #ifdef PHYSFS_PLATFORM_WIIU
+        return __PHYSFS_wiiuCalcUserDir();
+    #else
+        uid_t uid = getuid();
+        struct passwd *pw;
+        char *retval = NULL;
 
-    pw = getpwuid(uid);
-    if ((pw != NULL) && (pw->pw_dir != NULL) && (*pw->pw_dir != '\0'))
-    {
-        const size_t dlen = strlen(pw->pw_dir);
-        const size_t add_dirsep = (pw->pw_dir[dlen-1] != '/') ? 1 : 0;
-        retval = (char *) allocator.Malloc(dlen + 1 + add_dirsep);
-        if (retval != NULL)
+        pw = getpwuid(uid);
+        if ((pw != NULL) && (pw->pw_dir != NULL) && (*pw->pw_dir != '\0'))
         {
-            strcpy(retval, pw->pw_dir);
-            if (add_dirsep)
+            const size_t dlen = strlen(pw->pw_dir);
+            const size_t add_dirsep = (pw->pw_dir[dlen-1] != '/') ? 1 : 0;
+            retval = (char *) allocator.Malloc(dlen + 1 + add_dirsep);
+            if (retval != NULL)
             {
-                retval[dlen] = '/';
-                retval[dlen+1] = '\0';
+                strcpy(retval, pw->pw_dir);
+                if (add_dirsep)
+                {
+                    retval[dlen] = '/';
+                    retval[dlen+1] = '\0';
+                } /* if */
             } /* if */
         } /* if */
-    } /* if */
-    
-    return retval;
+
+        return retval;
+    #endif
 } /* getUserDirByUID */
 
 
 char *__PHYSFS_platformCalcUserDir(void)
 {
-    char *retval = NULL;
-    char *envr = getenv("HOME");
+    #ifdef PHYSFS_PLATFORM_WIIU
+        return __PHYSFS_wiiuCalcUserDir();
+    #else
+        char *retval = NULL;
+        char *envr = getenv("HOME");
 
-    /* if the environment variable was set, make sure it's really a dir. */
-    if (envr != NULL)
-    {
-        struct stat statbuf;
-        if ((stat(envr, &statbuf) != -1) && (S_ISDIR(statbuf.st_mode)))
+        /* if the environment variable was set, make sure it's really a dir. */
+        if (envr != NULL)
         {
-            const size_t envrlen = strlen(envr);
-            const size_t add_dirsep = (envr[envrlen-1] != '/') ? 1 : 0;
-            retval = allocator.Malloc(envrlen + 1 + add_dirsep);
-            if (retval)
+            struct stat statbuf;
+            if ((stat(envr, &statbuf) != -1) && (S_ISDIR(statbuf.st_mode)))
             {
-                strcpy(retval, envr);
-                if (add_dirsep)
+                const size_t envrlen = strlen(envr);
+                const size_t add_dirsep = (envr[envrlen-1] != '/') ? 1 : 0;
+                retval = allocator.Malloc(envrlen + 1 + add_dirsep);
+                if (retval)
                 {
-                    retval[envrlen] = '/';
-                    retval[envrlen+1] = '\0';
+                    strcpy(retval, envr);
+                    if (add_dirsep)
+                    {
+                        retval[envrlen] = '/';
+                        retval[envrlen+1] = '\0';
+                    } /* if */
                 } /* if */
             } /* if */
         } /* if */
-    } /* if */
 
-    if (retval == NULL)
-        retval = getUserDirByUID();
+        if (retval == NULL)
+            retval = getUserDirByUID();
 
-    return retval;
+        return retval;
+    #endif
 } /* __PHYSFS_platformCalcUserDir */
 
 
@@ -377,73 +390,94 @@ typedef struct
 
 void *__PHYSFS_platformGetThreadID(void)
 {
-    return ( (void *) ((size_t) pthread_self()) );
+    #ifdef PHYSFS_PLATFORM_WIIU
+        return (void*)OSGetCurrentThread();
+    #else
+        return ( (void *) ((size_t) pthread_self()) );
+    #endif
 } /* __PHYSFS_platformGetThreadID */
 
 
 void *__PHYSFS_platformCreateMutex(void)
 {
-    int rc;
-    PthreadMutex *m = (PthreadMutex *) allocator.Malloc(sizeof (PthreadMutex));
-    BAIL_IF(!m, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
-    rc = pthread_mutex_init(&m->mutex, NULL);
-    if (rc != 0)
-    {
-        allocator.Free(m);
-        BAIL(PHYSFS_ERR_OS_ERROR, NULL);
-    } /* if */
+    #ifdef PHYSFS_PLATFORM_WIIU
+        OSMutex* m = allocator.Malloc(sizeof(OSMutex));
+        BAIL_IF(!m, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
+        OSInitMutex(m);
+    #else
+        int rc;
+        PthreadMutex *m = (PthreadMutex *) allocator.Malloc(sizeof (PthreadMutex));
+        BAIL_IF(!m, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
+        rc = pthread_mutex_init(&m->mutex, NULL);
+        if (rc != 0)
+        {
+            allocator.Free(m);
+            BAIL(PHYSFS_ERR_OS_ERROR, NULL);
+        } /* if */
 
-    m->count = 0;
-    m->owner = (pthread_t) 0xDEADBEEF;
-    return ((void *) m);
+        m->count = 0;
+        m->owner = (pthread_t) 0xDEADBEEF;
+        return ((void *) m);
+    #endif
 } /* __PHYSFS_platformCreateMutex */
 
 
 void __PHYSFS_platformDestroyMutex(void *mutex)
 {
-    PthreadMutex *m = (PthreadMutex *) mutex;
+    #ifdef PHYSFS_PLATFORM_WIIU
+        allocator.Free((OSMutex*)mutex);
+    #else
+        PthreadMutex *m = (PthreadMutex *) mutex;
 
-    /* Destroying a locked mutex is a bug, but we'll try to be helpful. */
-    if ((m->owner == pthread_self()) && (m->count > 0))
-        pthread_mutex_unlock(&m->mutex);
+        /* Destroying a locked mutex is a bug, but we'll try to be helpful. */
+        if ((m->owner == pthread_self()) && (m->count > 0))
+            pthread_mutex_unlock(&m->mutex);
 
-    pthread_mutex_destroy(&m->mutex);
-    allocator.Free(m);
+        pthread_mutex_destroy(&m->mutex);
+        allocator.Free(m);
+    #endif
 } /* __PHYSFS_platformDestroyMutex */
 
 
 int __PHYSFS_platformGrabMutex(void *mutex)
 {
-    PthreadMutex *m = (PthreadMutex *) mutex;
-    pthread_t tid = pthread_self();
-    if (m->owner != tid)
-    {
-        if (pthread_mutex_lock(&m->mutex) != 0)
-            return 0;
-        m->owner = tid;
-    } /* if */
+    #ifdef PHYSFS_PLATFORM_WIIU
+        OSLockMutex((OSMutex*)mutex);
+    #else
+        PthreadMutex *m = (PthreadMutex *) mutex;
+        pthread_t tid = pthread_self();
+        if (m->owner != tid)
+        {
+            if (pthread_mutex_lock(&m->mutex) != 0)
+                return 0;
+            m->owner = tid;
+        } /* if */
 
-    m->count++;
+        m->count++;
+    #endif
     return 1;
 } /* __PHYSFS_platformGrabMutex */
 
 
 void __PHYSFS_platformReleaseMutex(void *mutex)
 {
-    PthreadMutex *m = (PthreadMutex *) mutex;
-    assert(m->owner == pthread_self());  /* catch programming errors. */
-    assert(m->count > 0);  /* catch programming errors. */
-    if (m->owner == pthread_self())
-    {
-        if (--m->count == 0)
+    #ifdef PHYSFS_PLATFORM_WIIU
+        OSUnlockMutex((OSMutex*)mutex);
+    #else
+        PthreadMutex *m = (PthreadMutex *) mutex;
+        assert(m->owner == pthread_self());  /* catch programming errors. */
+        assert(m->count > 0);  /* catch programming errors. */
+        if (m->owner == pthread_self())
         {
-            m->owner = (pthread_t) 0xDEADBEEF;
-            pthread_mutex_unlock(&m->mutex);
+            if (--m->count == 0)
+            {
+                m->owner = (pthread_t) 0xDEADBEEF;
+                pthread_mutex_unlock(&m->mutex);
+            } /* if */
         } /* if */
-    } /* if */
+    #endif
 } /* __PHYSFS_platformReleaseMutex */
 
 #endif  /* PHYSFS_PLATFORM_POSIX */
 
 /* end of physfs_platform_posix.c ... */
-
