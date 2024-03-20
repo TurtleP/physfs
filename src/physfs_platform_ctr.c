@@ -1,5 +1,9 @@
 /*
  * Nintendo 3DS support routines for PhysicsFS.
+ *
+ * Please see the file LICENSE.txt in the source's root directory.
+ *
+ * This file written by TurtleP
  */
 
 #define __PHYSICSFS_INTERNAL__
